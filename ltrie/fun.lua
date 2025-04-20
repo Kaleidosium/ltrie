@@ -1,48 +1,16 @@
---
--- Lua Fun - a high-performance functional programming library for LuaJIT
---
--------------------------------------------------------------------------------
---
--- **Lua Fun** source code, logo and documentation are distributed under the
--- **[MIT License]** - same as Lua and LuaJIT.
---
--- Copyright (c) 2013-2014 Roman Tsisyk <roman@tsisyk.com>
---
--- Permission is hereby granted, free of charge, to any person obtaining a
--- copy of this software and associated documentation files (the "Software"),
--- to deal in the Software without restriction, including without limitation
--- the rights to use, copy, modify, merge, publish, distribute, sublicense,
--- and/or sell copies of the Software, and to permit persons to whom the
--- Software is furnished to do so, subject to the following conditions:
---
--- The above copyright notice and this permission notice shall be included in
--- all copies or substantial portions of the Software.
---
--- THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
--- IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
--- FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
--- AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
--- LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
--- FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
--- DEALINGS IN THE SOFTWARE.
---
--- [MIT License]: http://www.opensource.org/licenses/mit-license.php
---
--------------------------------------------------------------------------------
---
--- Modified for ltrie. Changes from upstream luafun are:
--- * iterators implement `__len()`
--- * `fun.numargs(iter)` is exported for external use
--- * `iter:find(pred)` is like `index()`, but uses a predicate function.
--- * `fun.some()` is now an alias for `fun.find()` instead of `fun.any()`.
--- * `iter:get()` is an alias for `nth()`. method-only.
--- * `fun.xunpack(iter)` functions like `unpack(table)`.
--- * `iter:unpack()` is an alias for `xunpack()`. method-only.
--- * `iter:decons()` returns `iter:head(), iter:tail()`. convenience function.
--- * name export mistakes, see GH rtsisyk/luafun#12
+---
+--- Lua Fun - a high-performance functional programming library for LuaJIT
+---
+--- Copyright (c) 2013-2017 Roman Tsisyk <roman@tsisyk.com>
+---
+--- Distributed under the MIT/X11 License. See COPYING.md for more details.
+---
 
 local exports = {}
 local methods = {}
+
+-- compatibility with Lua 5.1/5.2
+local unpack = rawget(table, "unpack") or unpack
 
 --------------------------------------------------------------------------------
 -- Tools
@@ -80,12 +48,12 @@ local iterator_mt = {
     -- usually called by for-in loop
     __call = function(self, param, state)
         return self.gen(param, state)
-    end;
+    end,
     __tostring = function(self)
         return '<generator>'
-    end;
+    end,
     -- add all exported methods
-    __index = methods;
+    __index = methods,
 }
 
 local wrap = function(gen, param, state)
@@ -111,7 +79,7 @@ local nil_gen = function(_param, _state)
 end
 
 local string_gen = function(param, state)
-    state = state + 1
+    local state = state + 1
     if state > #param then
         return nil
     end
@@ -119,10 +87,12 @@ local string_gen = function(param, state)
     return state, r
 end
 
+local ipairs_gen = ipairs({})      -- get the generating function from ipairs
+
 local pairs_gen = pairs({ a = 0 }) -- get the generating function from pairs
 local map_gen = function(tab, key)
     local value
-    key, value = pairs_gen(tab, key)
+    local key, value = pairs_gen(tab, key)
     return key, key, value
 end
 
@@ -155,7 +125,7 @@ local rawiter = function(obj, param, state)
         return string_gen, obj, 0
     end
     error(string.format('object %s of type "%s" is not iterable',
-          obj, type(obj)))
+        obj, type(obj)))
 end
 
 local iter = function(obj, param, state)
@@ -217,7 +187,7 @@ exports.foreach = exports.each
 
 local range_gen = function(param, state)
     local stop, step = param[1], param[2]
-    state = state + step
+    local state = state + step
     if state > stop then
         return nil
     end
@@ -226,7 +196,7 @@ end
 
 local range_rev_gen = function(param, state)
     local stop, step = param[1], param[2]
-    state = state + step
+    local state = state + step
     if state < stop then
         return nil
     end
@@ -251,23 +221,12 @@ local range = function(start, stop, step)
     assert(step ~= 0, "step must not be zero")
 
     if (step > 0) then
-        return wrap(range_gen, {stop, step}, start - step)
+        return wrap(range_gen, { stop, step }, start - step)
     elseif (step < 0) then
-        return wrap(range_rev_gen, {stop, step}, start - step)
+        return wrap(range_rev_gen, { stop, step }, start - step)
     end
 end
 exports.range = range
-
-local natural_gen = function(param, state)
-    return state + 1, state + 1
-end
-
-local naturals = function()
-    return wrap(natural_gen, 0, 0)
-end
-
-
-exports.naturals = naturals
 
 local duplicate_table_gen = function(param_x, state_x)
     return state_x + 1, unpack(param_x)
@@ -285,7 +244,7 @@ local duplicate = function(...)
     if select('#', ...) <= 1 then
         return wrap(duplicate_gen, select(1, ...), 0)
     else
-        return wrap(duplicate_table_gen, {...}, 0)
+        return wrap(duplicate_table_gen, { ... }, 0)
     end
 end
 exports.duplicate = duplicate
@@ -328,7 +287,7 @@ local rands = function(n, m)
         assert(type(m) == "number", "invalid second arg to rands")
     end
     assert(n < m, "empty interval")
-    return wrap(rands_gen, {n, m - 1}, 0)
+    return wrap(rands_gen, { n, m - 1 }, 0)
 end
 exports.rands = rands
 
@@ -339,16 +298,16 @@ exports.rands = rands
 local nth = function(n, gen_x, param_x, state_x)
     assert(n > 0, "invalid first argument to nth")
     -- An optimization for arrays and strings
-    if gen_x == ipairs then
-        return param_x[n]
+    if gen_x == ipairs_gen then
+        return param_x[state_x + n]
     elseif gen_x == string_gen then
-        if n < #param_x then
-            return string.sub(param_x, n, n)
+        if state_x + n <= #param_x then
+            return string.sub(param_x, state_x + n, state_x + n)
         else
             return nil
         end
     end
-    for i=1,n-1,1 do
+    for i = 1, n - 1, 1 do
         state_x = gen_x(param_x, state_x)
         if state_x == nil then
             return nil
@@ -357,7 +316,6 @@ local nth = function(n, gen_x, param_x, state_x)
     return return_if_not_empty(gen_x(param_x, state_x))
 end
 methods.nth = method1(nth)
-methods.get = methods.nth
 exports.nth = export1(nth)
 
 local head_call = function(state, ...)
@@ -387,21 +345,11 @@ exports.tail = export0(tail)
 exports.cdr = exports.tail
 methods.cdr = methods.tail
 
-local decons = function(gen, param, state)
-    local new_state, val = gen(param, state)
-    if new_state == nil then
-        return val, wrap(nil_gen, nil, nil)
-    end
-    return val, wrap(gen, param, new_state)
-end
-methods.decons = method0(decons)
-exports.decons = export0(decons)
-
 local take_n_gen_x = function(i, state_x, ...)
     if state_x == nil then
         return nil
     end
-    return {i, state_x}, ...
+    return { i, state_x }, ...
 end
 
 local take_n_gen = function(param, state)
@@ -415,7 +363,7 @@ end
 
 local take_n = function(n, gen, param, state)
     assert(n >= 0, "invalid first argument to take_n")
-    return wrap(take_n_gen, {n, gen, param}, {0, state})
+    return wrap(take_n_gen, { n, gen, param }, { 0, state })
 end
 methods.take_n = method1(take_n)
 exports.take_n = export1(take_n)
@@ -434,7 +382,7 @@ end
 
 local take_while = function(fun, gen, param, state)
     assert(type(fun) == "function", "invalid first argument to take_while")
-    return wrap(take_while_gen, {fun, gen, param}, state)
+    return wrap(take_while_gen, { fun, gen, param }, state)
 end
 methods.take_while = method1(take_while)
 exports.take_while = export1(take_while)
@@ -449,21 +397,10 @@ end
 methods.take = method1(take)
 exports.take = export1(take)
 
-local function xunpack(gen, param, state)
-    local next_state, val = gen(param, state)
-    if next_state == nil then
-        return -- none does not add to varargs
-    end
-    return val, xunpack(gen, param, next_state)
-end
-methods.xunpack = method0(xunpack)
-methods.unpack  = methods.xunpack
-exports.xunpack = export0(xunpack)
-
 local drop_n = function(n, gen, param, state)
     assert(n >= 0, "invalid first argument to drop_n")
     local i
-    for i=1,n,1 do
+    for i = 1, n, 1 do
         state = gen(param, state)
         if state == nil then
             return wrap(nil_gen, nil, nil)
@@ -474,24 +411,41 @@ end
 methods.drop_n = method1(drop_n)
 exports.drop_n = export1(drop_n)
 
-local drop_while_x = function(fun, state_x, ...)
-    if state_x == nil or not fun(...) then
-        return state_x, false
+-- Unpack values from param[3] on the first iteration, then return
+-- values from the provided iterator.
+--
+-- A generator function for drop_while().
+local drop_while_gen = function(param, state)
+    local results = param[3]
+    if not results then
+        return param[1](param[2], state)
+    else
+        param[3] = nil
+        return state, unpack(results, 1, table.maxn(results))
     end
-    return state_x, true, ...
+end
+
+-- Checks if drop_while should continue skipping. If iterator is not exhausted
+-- and skipping is over, elements returned by iterator are wrapped into a table
+-- and returned as the second return value. Note that a table is created only
+-- once, on the last iteration, for the sake of performance.
+local drop_while_x = function(fun, state_x, ...)
+    if state_x ~= nil and not fun(...) then
+        return state_x, { ... }
+    end
+    return state_x
 end
 
 local drop_while = function(fun, gen_x, param_x, state_x)
     assert(type(fun) == "function", "invalid first argument to drop_while")
-    local cont, state_x_prev
-    repeat
-        state_x_prev = deepcopy(state_x)
-        state_x, cont = drop_while_x(fun, gen_x(param_x, state_x))
-    until not cont
+    local pivot = nil
+    while state_x ~= nil and pivot == nil do
+        state_x, pivot = drop_while_x(fun, gen_x(param_x, state_x))
+    end
     if state_x == nil then
         return wrap(nil_gen, nil, nil)
     end
-    return wrap(gen_x, param_x, state_x_prev)
+    return wrap(drop_while_gen, { gen_x, param_x, pivot }, state_x)
 end
 methods.drop_while = method1(drop_while)
 exports.drop_while = export1(drop_while)
@@ -508,7 +462,7 @@ exports.drop = export1(drop)
 
 local split = function(n_or_fun, gen_x, param_x, state_x)
     return take(n_or_fun, gen_x, param_x, state_x),
-           drop(n_or_fun, gen_x, param_x, state_x)
+        drop(n_or_fun, gen_x, param_x, state_x)
 end
 methods.split = method1(split)
 exports.split = export1(split)
@@ -520,20 +474,6 @@ exports.span = exports.split
 --------------------------------------------------------------------------------
 -- Indexing
 --------------------------------------------------------------------------------
-
-local find = function(pred, gen, param, state)
-    for _k, v in gen, param, state do
-        local r = pred(v)
-        if r then
-            return r
-        end
-    end
-    return nil
-end
-methods.find = method1(find)
-exports.find = export1(find)
-methods.some = methods.find
-exports.some = exports.find
 
 local index = function(x, gen, param, state)
     local i = 1
@@ -563,13 +503,13 @@ local indexes_gen = function(param, state)
         end
         i = i + 1
         if r == x then
-            return {i, state_x}, i
+            return { i, state_x }, i
         end
     end
 end
 
 local indexes = function(x, gen, param, state)
-    return wrap(indexes_gen, {x, gen, param}, {0, state})
+    return wrap(indexes_gen, { x, gen, param }, { 0, state })
 end
 methods.indexes = method1(indexes)
 exports.indexes = export1(indexes)
@@ -622,7 +562,7 @@ local filter_gen = function(param, state_x)
 end
 
 local filter = function(fun, gen, param, state)
-    return wrap(filter_gen, {fun, gen, param}, state)
+    return wrap(filter_gen, { fun, gen, param }, state)
 end
 methods.filter = method1(filter)
 exports.filter = export1(filter)
@@ -644,7 +584,7 @@ local partition = function(fun, gen, param, state)
         return not fun(...)
     end
     return filter(fun, gen, param, state),
-           filter(neg_fun, gen, param, state)
+        filter(neg_fun, gen, param, state)
 end
 methods.partition = method1(partition)
 exports.partition = export1(partition)
@@ -675,8 +615,8 @@ methods.reduce = methods.foldl
 exports.reduce = exports.foldl
 
 local length = function(gen, param, state)
-    if gen == ipairs or gen == string_gen then
-        return #param
+    if gen == ipairs_gen or gen == string_gen then
+        return #param - state
     end
     local len = 0
     repeat
@@ -687,7 +627,6 @@ local length = function(gen, param, state)
 end
 methods.length = method0(length)
 exports.length = export0(length)
-iterator_mt.__len = methods.length
 
 local is_null = function(gen, param, state)
     return gen(param, deepcopy(state)) == nil
@@ -700,16 +639,16 @@ local is_prefix_of = function(iter_x, iter_y)
     local gen_y, param_y, state_y = iter(iter_y)
 
     local r_x, r_y
-    for i=1,10,1 do
+    repeat
         state_x, r_x = gen_x(param_x, state_x)
-        state_y, r_y = gen_y(param_y, state_y)
         if state_x == nil then
             return true
         end
-        if state_y == nil or r_x ~= r_y then
-            return false
-        end
-    end
+
+        state_y, r_y = gen_y(param_y, state_y)
+    until state_y == nil or r_x ~= r_y
+
+    return false
 end
 methods.is_prefix_of = is_prefix_of
 exports.is_prefix_of = is_prefix_of
@@ -735,6 +674,8 @@ local any = function(fun, gen_x, param_x, state_x)
 end
 methods.any = method1(any)
 exports.any = export1(any)
+methods.some = methods.any
+exports.some = exports.any
 
 local sum = function(gen, param, state)
     local s = 0
@@ -886,7 +827,7 @@ local map_gen = function(param, state)
 end
 
 local map = function(fun, gen, param, state)
-    return wrap(map_gen, {gen, param, fun}, state)
+    return wrap(map_gen, { gen, param, fun }, state)
 end
 methods.map = method1(map)
 exports.map = export1(map)
@@ -895,7 +836,7 @@ local enumerate_gen_call = function(state, i, state_x, ...)
     if state_x == nil then
         return nil
     end
-    return {i + 1, state_x}, i, ...
+    return { i + 1, state_x }, i, ...
 end
 
 local enumerate_gen = function(param, state)
@@ -905,7 +846,7 @@ local enumerate_gen = function(param, state)
 end
 
 local enumerate = function(gen, param, state)
-    return wrap(enumerate_gen, {gen, param}, {1, state})
+    return wrap(enumerate_gen, { gen, param }, { 1, state })
 end
 methods.enumerate = method0(enumerate)
 exports.enumerate = export0(enumerate)
@@ -914,14 +855,14 @@ local intersperse_call = function(i, state_x, ...)
     if state_x == nil then
         return nil
     end
-    return {i + 1, state_x}, ...
+    return { i + 1, state_x }, ...
 end
 
 local intersperse_gen = function(param, state)
     local x, gen_x, param_x = param[1], param[2], param[3]
     local i, state_x = state[1], state[2]
     if i % 2 == 1 then
-        return {i + 1, state_x}, x
+        return { i + 1, state_x }, x
     else
         return intersperse_call(i, gen_x(param_x, state_x))
     end
@@ -929,7 +870,7 @@ end
 
 -- TODO: interperse must not add x to the tail
 local intersperse = function(x, gen, param, state)
-    return wrap(intersperse_gen, {x, gen, param}, {0, state})
+    return wrap(intersperse_gen, { x, gen, param }, { 0, state })
 end
 methods.intersperse = method1(intersperse)
 exports.intersperse = export1(intersperse)
@@ -965,13 +906,12 @@ local numargs = function(...)
         -- Fix last argument
         local it = select(n - 2, ...)
         if type(it) == 'table' and getmetatable(it) == iterator_mt and
-           it.param == select(n - 1, ...) and it.state == select(n, ...) then
+            it.param == select(n - 1, ...) and it.state == select(n, ...) then
             return n - 2
         end
     end
     return n
 end
-exports.numargs = numargs
 
 local zip = function(...)
     local n = numargs(...)
@@ -982,7 +922,7 @@ local zip = function(...)
     local state = { [n] = 0 }
 
     local i, gen_x, param_x, state_x
-    for i=1,n,1 do
+    for i = 1, n, 1 do
         local it = select(n - i + 1, ...)
         gen_x, param_x, state_x = rawiter(it)
         param[2 * i - 1] = gen_x
@@ -1009,7 +949,7 @@ local cycle_gen = function(param, state_x)
 end
 
 local cycle = function(gen, param, state)
-    return wrap(cycle_gen, {gen, param, state}, deepcopy(state))
+    return wrap(cycle_gen, { gen, param, state }, deepcopy(state))
 end
 methods.cycle = method0(cycle)
 exports.cycle = export0(cycle)
@@ -1020,13 +960,13 @@ local chain_gen_r2 = function(param, state, state_x, ...)
     if state_x == nil then
         local i = state[1]
         i = i + 1
-        if i > #param / 3 then
+        if param[3 * i - 2] == nil then
             return nil
         end
         local state_x = param[3 * i]
-        return chain_gen_r1(param, {i, state_x})
+        return chain_gen_r1(param, { i, state_x })
     end
-    return {state[1], state_x}, ...
+    return { state[1], state_x }, ...
 end
 
 chain_gen_r1 = function(param, state)
@@ -1043,7 +983,7 @@ local chain = function(...)
 
     local param = { [3 * n] = 0 }
     local i, gen_x, param_x, state_x
-    for i=1,n,1 do
+    for i = 1, n, 1 do
         local elem = select(i, ...)
         gen_x, param_x, state_x = iter(elem)
         param[3 * i - 2] = gen_x
@@ -1051,7 +991,7 @@ local chain = function(...)
         param[3 * i] = state_x
     end
 
-    return wrap(chain_gen_r1, param, {1, param[3]})
+    return wrap(chain_gen_r1, param, { 1, param[3] })
 end
 methods.chain = chain
 exports.chain = chain
@@ -1064,45 +1004,45 @@ local operator = {
     ----------------------------------------------------------------------------
     -- Comparison operators
     ----------------------------------------------------------------------------
-    lt  = function(a, b) return a < b end,
-    le  = function(a, b) return a <= b end,
-    eq  = function(a, b) return a == b end,
-    ne  = function(a, b) return a ~= b end,
-    ge  = function(a, b) return a >= b end,
-    gt  = function(a, b) return a > b end,
+    lt       = function(a, b) return a < b end,
+    le       = function(a, b) return a <= b end,
+    eq       = function(a, b) return a == b end,
+    ne       = function(a, b) return a ~= b end,
+    ge       = function(a, b) return a >= b end,
+    gt       = function(a, b) return a > b end,
 
     ----------------------------------------------------------------------------
     -- Arithmetic operators
     ----------------------------------------------------------------------------
-    add = function(a, b) return a + b end,
-    div = function(a, b) return a / b end,
-    floordiv = function(a, b) return math.floor(a/b) end,
-    intdiv = function(a, b)
+    add      = function(a, b) return a + b end,
+    div      = function(a, b) return a / b end,
+    floordiv = function(a, b) return math.floor(a / b) end,
+    intdiv   = function(a, b)
         local q = a / b
         if a >= 0 then return math.floor(q) else return math.ceil(q) end
     end,
-    mod = function(a, b) return a % b end,
-    mul = function(a, b) return a * b end,
-    neq = function(a) return -a end,
-    unm = function(a) return -a end, -- an alias
-    pow = function(a, b) return a ^ b end,
-    sub = function(a, b) return a - b end,
-    truediv = function(a, b) return a / b end,
+    mod      = function(a, b) return a % b end,
+    mul      = function(a, b) return a * b end,
+    neq      = function(a) return -a end,
+    unm      = function(a) return -a end, -- an alias
+    pow      = function(a, b) return a ^ b end,
+    sub      = function(a, b) return a - b end,
+    truediv  = function(a, b) return a / b end,
 
     ----------------------------------------------------------------------------
     -- String operators
     ----------------------------------------------------------------------------
-    concat = function(a, b) return a..b end,
-    len = function(a) return #a end,
-    length = function(a) return #a end, -- an alias
+    concat   = function(a, b) return a .. b end,
+    len      = function(a) return #a end,
+    length   = function(a) return #a end, -- an alias
 
     ----------------------------------------------------------------------------
     -- Logical operators
     ----------------------------------------------------------------------------
-    land = function(a, b) return a and b end,
-    lor = function(a, b) return a or b end,
-    lnot = function(a) return not a end,
-    truth = function(a) return not not a end,
+    land     = function(a, b) return a and b end,
+    lor      = function(a, b) return a or b end,
+    lnot     = function(a) return not a end,
+    truth    = function(a) return not not a end,
 }
 exports.operator = operator
 methods.operator = operator
@@ -1115,12 +1055,19 @@ methods.op = operator
 
 -- a special syntax sugar to export all functions to the global table
 setmetatable(exports, {
-    __call = function(t)
-        if not _G._LUAFUN then
-            for k, v in pairs(t) do _G[k] = v end
-            _G._LUAFUN = t
-        else
-            error("Luafun already imported")
+    __call = function(t, override)
+        for k, v in pairs(t) do
+            if rawget(_G, k) ~= nil then
+                local msg = 'function ' .. k .. ' already exists in global scope.'
+                if override then
+                    rawset(_G, k, v)
+                    print('WARNING: ' .. msg .. ' Overwritten.')
+                else
+                    print('NOTICE: ' .. msg .. ' Skipped.')
+                end
+            else
+                rawset(_G, k, v)
+            end
         end
     end,
 })

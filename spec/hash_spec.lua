@@ -1,21 +1,21 @@
 local paragraph
 
-for _, m in ipairs { "ltrie.c_hashcode", "ltrie.lua_hashcode" } do
-	local hash = require(m).hashcode
-	describe(m, function()
-		it("hashes strings", function()
-			assert.equal(hash("foo"), hash("foo"))
-			assert.equal(
-				hash("A reasonably long string"),
-				hash("A reasonably long string"))
-			assert.equal(hash(paragraph), hash(paragraph))
-		end)
-		it("hashes numbers", function()
-			assert.equal(hash(1), hash(1))
-			assert.equal(hash(0xDEADBEEF), hash(0xDEADBEEF))
-			assert.equal(hash(math.pi), hash(math.pi))
-		end)
-	end)
+for _, m in ipairs { "ltrie.lua_hashcode" } do
+    local hash = require(m).hashcode
+    describe(m, function()
+        it("hashes strings", function()
+            assert.equal(hash("foo"), hash("foo"))
+            assert.equal(
+                hash("A reasonably long string"),
+                hash("A reasonably long string"))
+            assert.equal(hash(paragraph), hash(paragraph))
+        end)
+        it("hashes numbers", function()
+            assert.equal(hash(1), hash(1))
+            assert.equal(hash(0xDEADBEEF), hash(0xDEADBEEF))
+            assert.equal(hash(math.pi), hash(math.pi))
+        end)
+    end)
 end
 
 -- {{{ lipsum
@@ -32,4 +32,3 @@ Suspendisse lectus leo, consectetur in tempor sit amet, placerat quis neque. Eti
 Class aptent taciti sociosqu ad litora torquent per conubia nostra, per inceptos himenaeos. In euismod ultrices facilisis. Vestibulum porta sapien adipiscing augue congue id pretium lectus molestie. Proin quis dictum nisl. Morbi id quam sapien, sed vestibulum sem. Duis elementum rutrum mauris sed convallis. Proin vestibulum magna mi. Aenean tristique hendrerit magna, ac facilisis nulla hendrerit ut. Sed non tortor sodales quam auctor elementum. Donec hendrerit nunc eget elit pharetra pulvinar. Suspendisse id tempus tortor. Aenean luctus, elit commodo laoreet commodo, justo nisi consequat massa, sed vulputate quam urna quis eros. Donec vel.
 ]]
 -- }}}
-
