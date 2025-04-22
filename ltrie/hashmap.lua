@@ -29,9 +29,6 @@
 local type = type; local pairs = pairs; local ipairs = ipairs; local next = next; local select = select
 local setmetatable = setmetatable; local getmetatable = getmetatable; local table_insert = table.insert
 local table_remove = table.remove; local pcall = pcall; local assert = assert; local error = error
-local string_format = string.format; local math_random = math.random
-
---- An immutable hashmap, modelled after PersistentHashMap in Clojure. @module Hashmap
 
 local function try(...)
     local ok, r = pcall(...); if not ok then return nil, r end; return r
